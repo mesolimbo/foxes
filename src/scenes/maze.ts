@@ -81,6 +81,8 @@ export class MazeScene implements Scene {
   private chickBonesImg: ImageBitmap | null = null;
   private titleImg: ImageBitmap | null = null;
   private cluckSound: HTMLAudioElement | null = null;
+  private barkSound: HTMLAudioElement | null = null;
+  private lastBarkTime = 0;
   private mapCanvas: OffscreenCanvas | null = null;
   private mapCtx: OffscreenCanvasRenderingContext2D | null = null;
   private wallMatrix: boolean[][] = []; // true = wall, false = grass
@@ -270,6 +272,10 @@ export class MazeScene implements Scene {
     this.cluckSound = new Audio("/assets/cluck.mp3");
     this.cluckSound.preload = "auto";
     this.cluckSound.load();
+
+    this.barkSound = new Audio("/assets/bark.mp3");
+    this.barkSound.preload = "auto";
+    this.barkSound.load();
   }
 
   private playerOnLeft = true; // Track which side player spawned on
@@ -1042,6 +1048,12 @@ export class MazeScene implements Scene {
         if (hasLOS && distanceToPlayer < DOG_CHASE_RANGE) {
           // Chase player
           this.moveNpcToward(npc, this.player.x, this.player.y, DOG_SPEED_CHASE * speedMult);
+          // Bark when closing in (max once every 4 seconds)
+          if (this.barkSound && currentTime - this.lastBarkTime >= 4000) {
+            this.barkSound.currentTime = 0;
+            this.barkSound.play();
+            this.lastBarkTime = currentTime;
+          }
         } else {
           // Wander
           this.wanderNpc(npc, currentTime, DOG_SPEED_WANDER * speedMult);
