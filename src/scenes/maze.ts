@@ -409,7 +409,122 @@ export class MazeScene implements Scene {
       attempts++;
     }
 
+    // Fix any closed boxes
+    this.fixClosedBoxes();
+
     console.log(`Placed ${placedCount} detached walls in ${attempts} attempts`);
+  }
+
+  private fixClosedBoxes(): void {
+    // Use flood fill to find unreachable grass areas
+    const visited: boolean[][] = [];
+    for (let row = 0; row < GRID_ROWS; row++) {
+      visited.push(new Array(GRID_COLS).fill(false));
+    }
+
+    // Find first open cell to start flood fill
+    let startRow = -1, startCol = -1;
+    for (let row = 0; row < GRID_ROWS && startRow < 0; row++) {
+      for (let col = 0; col < GRID_COLS && startCol < 0; col++) {
+        if (!this.wallMatrix[row][col]) {
+          startRow = row;
+          startCol = col;
+        }
+      }
+    }
+
+    if (startRow < 0) return; // No open cells
+
+    // Flood fill from start
+    const stack: { row: number; col: number }[] = [{ row: startRow, col: startCol }];
+    while (stack.length > 0) {
+      const { row, col } = stack.pop()!;
+      if (row < 0 || row >= GRID_ROWS || col < 0 || col >= GRID_COLS) continue;
+      if (visited[row][col] || this.wallMatrix[row][col]) continue;
+      visited[row][col] = true;
+      stack.push({ row: row - 1, col });
+      stack.push({ row: row + 1, col });
+      stack.push({ row, col: col - 1 });
+      stack.push({ row, col: col + 1 });
+    }
+
+    // Find unreachable grass cells (inside closed boxes)
+    for (let row = 0; row < GRID_ROWS; row++) {
+      for (let col = 0; col < GRID_COLS; col++) {
+        if (!this.wallMatrix[row][col] && !visited[row][col]) {
+          // Found an enclosed area - break it open
+          this.breakOpenAt(row, col);
+          // Recursively fix in case there are multiple boxes
+          this.fixClosedBoxes();
+          return;
+        }
+      }
+    }
+  }
+
+  private breakOpenAt(targetRow: number, targetCol: number): void {
+    // Find an adjacent wall and shrink it to open access
+    const directions = [
+      { dr: -1, dc: 0 }, // up
+      { dr: 1, dc: 0 },  // down
+      { dr: 0, dc: -1 }, // left
+      { dr: 0, dc: 1 },  // right
+    ];
+
+    for (const { dr, dc } of directions) {
+      const wallRow = targetRow + dr;
+      const wallCol = targetCol + dc;
+      if (wallRow >= 0 && wallRow < GRID_ROWS && wallCol >= 0 && wallCol < GRID_COLS) {
+        if (this.wallMatrix[wallRow][wallCol]) {
+          // Check if this wall segment can be removed (wall length > MIN_WALL_LENGTH)
+          const wallLength = this.getWallSegmentLength(wallRow, wallCol);
+          if (wallLength > MIN_WALL_LENGTH) {
+            this.wallMatrix[wallRow][wallCol] = false;
+            return;
+          }
+        }
+      }
+    }
+
+    // If no wall could be shrunk, just remove any adjacent wall
+    for (const { dr, dc } of directions) {
+      const wallRow = targetRow + dr;
+      const wallCol = targetCol + dc;
+      if (wallRow >= 0 && wallRow < GRID_ROWS && wallCol >= 0 && wallCol < GRID_COLS) {
+        if (this.wallMatrix[wallRow][wallCol]) {
+          this.wallMatrix[wallRow][wallCol] = false;
+          return;
+        }
+      }
+    }
+  }
+
+  private getWallSegmentLength(row: number, col: number): number {
+    if (!this.wallMatrix[row][col]) return 0;
+
+    // Check if horizontal or vertical wall
+    const hasHorizNeighbor =
+      (col > 0 && this.wallMatrix[row][col - 1]) ||
+      (col < GRID_COLS - 1 && this.wallMatrix[row][col + 1]);
+    const hasVertNeighbor =
+      (row > 0 && this.wallMatrix[row - 1][col]) ||
+      (row < GRID_ROWS - 1 && this.wallMatrix[row + 1][col]);
+
+    let length = 1;
+    if (hasHorizNeighbor && !hasVertNeighbor) {
+      // Horizontal wall - count left and right
+      for (let c = col - 1; c >= 0 && this.wallMatrix[row][c]; c--) length++;
+      for (let c = col + 1; c < GRID_COLS && this.wallMatrix[row][c]; c++) length++;
+    } else if (hasVertNeighbor && !hasHorizNeighbor) {
+      // Vertical wall - count up and down
+      for (let r = row - 1; r >= 0 && this.wallMatrix[r][col]; r--) length++;
+      for (let r = row + 1; r < GRID_ROWS && this.wallMatrix[r][col]; r++) length++;
+    } else {
+      // Intersection or isolated - count both directions
+      length = Math.max(length, 2); // Intersections should be breakable
+    }
+
+    return length;
   }
 
   private placeIntersectingPair(): void {
