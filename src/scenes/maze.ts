@@ -98,6 +98,7 @@ export class MazeScene implements Scene {
   private gameStarted = false;
   private gameOver = false;
   private levelComplete = false;
+  private introMusicStarted = false;
   private canvas: HTMLCanvasElement | null = null;
   private mouseTarget: { x: number; y: number } | null = null;
   private isMouseDown = false;
@@ -156,7 +157,13 @@ export class MazeScene implements Scene {
       // Space to start game, restart when game over, or continue when level complete
       if (e.key === " ") {
         if (!this.gameStarted) {
-          this.startGame();
+          // First interaction starts intro music, second starts game
+          if (!this.introMusicStarted) {
+            this.introMusicStarted = true;
+            this.introSound?.play();
+          } else {
+            this.startGame();
+          }
         } else if (this.gameOver) {
           this.restartGame();
         } else if (this.levelComplete) {
@@ -187,7 +194,13 @@ export class MazeScene implements Scene {
     // Mouse events
     this.canvas?.addEventListener("mousedown", (e) => {
       if (!this.gameStarted) {
-        this.startGame();
+        // First interaction starts intro music, second starts game
+        if (!this.introMusicStarted) {
+          this.introMusicStarted = true;
+          this.introSound?.play();
+        } else {
+          this.startGame();
+        }
         return;
       }
       if (this.gameOver) {
@@ -215,7 +228,13 @@ export class MazeScene implements Scene {
     // Touch events
     this.canvas?.addEventListener("touchstart", (e) => {
       if (!this.gameStarted) {
-        this.startGame();
+        // First interaction starts intro music, second starts game
+        if (!this.introMusicStarted) {
+          this.introMusicStarted = true;
+          this.introSound?.play();
+        } else {
+          this.startGame();
+        }
         return;
       }
       if (this.gameOver) {
@@ -317,7 +336,7 @@ export class MazeScene implements Scene {
     this.introSound.preload = "auto";
     this.introSound.loop = true;
     this.introSound.load();
-    this.introSound.play();
+    // Don't auto-play - browsers require user interaction first
   }
 
   private playerOnLeft = true; // Track which side player spawned on
