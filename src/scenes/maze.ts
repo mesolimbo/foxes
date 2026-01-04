@@ -48,18 +48,18 @@ interface NPC {
   y: number;
   width: number;
   height: number;
-  img: HTMLImageElement;
+  img: ImageBitmap;
   type: "dog" | "chick";
   dead: boolean;
 }
 
 export class MazeScene implements Scene {
-  private grassImg: HTMLImageElement | null = null;
-  private bushesImg: HTMLImageElement | null = null;
-  private foxImg: HTMLImageElement | null = null;
-  private dogImg: HTMLImageElement | null = null;
-  private chickImg: HTMLImageElement | null = null;
-  private chickBonesImg: HTMLImageElement | null = null;
+  private grassImg: ImageBitmap | null = null;
+  private bushesImg: ImageBitmap | null = null;
+  private foxImg: ImageBitmap | null = null;
+  private dogImg: ImageBitmap | null = null;
+  private chickImg: ImageBitmap | null = null;
+  private chickBonesImg: ImageBitmap | null = null;
   private mapCanvas: OffscreenCanvas | null = null;
   private mapCtx: OffscreenCanvasRenderingContext2D | null = null;
   private wallMatrix: boolean[][] = []; // true = wall, false = grass
@@ -87,12 +87,11 @@ export class MazeScene implements Scene {
     });
   }
 
-  private loadImage(src: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = src;
+  private async loadImage(src: string): Promise<ImageBitmap> {
+    const response = await fetch(src);
+    const blob = await response.blob();
+    return createImageBitmap(blob, {
+      premultiplyAlpha: 'premultiply',
     });
   }
 
@@ -135,7 +134,7 @@ export class MazeScene implements Scene {
   }
 
   private initNPCs(): void {
-    const npcData: { img: HTMLImageElement | null; type: "dog" | "chick" }[] = [
+    const npcData: { img: ImageBitmap | null; type: "dog" | "chick" }[] = [
       { img: this.dogImg, type: "dog" },
       { img: this.chickImg, type: "chick" },
     ];
@@ -432,30 +431,22 @@ export class MazeScene implements Scene {
       0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT
     );
 
+    // Ensure proper alpha blending for sprites
+    ctx.globalCompositeOperation = 'source-over';
+
     // Draw dead NPCs (bones) right above background
     for (const npc of this.npcs) {
       if (!npc.dead) continue;
       const screenX = npc.x - this.cameraX;
       const screenY = npc.y - this.cameraY;
-      ctx.drawImage(
-        npc.img,
-        0, 0, npc.img.width, npc.img.height,
-        screenX, screenY, npc.width, npc.height
-      );
+      ctx.drawImage(npc.img, screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
 
     // Draw player (fox)
     if (this.foxImg) {
       const screenX = this.player.x - this.cameraX;
       const screenY = this.player.y - this.cameraY;
-      const frameWidth = this.foxImg.width / PLAYER_FRAMES;
-      const frameX = this.player.frame * frameWidth;
-
-      ctx.drawImage(
-        this.foxImg,
-        frameX, 0, frameWidth, this.foxImg.height,
-        screenX, screenY, this.player.width, this.player.height
-      );
+      ctx.drawImage(this.foxImg, screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
 
     // Draw live NPCs on top (dog, then chick)
@@ -463,11 +454,7 @@ export class MazeScene implements Scene {
       if (npc.dead) continue;
       const screenX = npc.x - this.cameraX;
       const screenY = npc.y - this.cameraY;
-      ctx.drawImage(
-        npc.img,
-        0, 0, npc.img.width, npc.img.height,
-        screenX, screenY, npc.width, npc.height
-      );
+      ctx.drawImage(npc.img, screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
   }
 
