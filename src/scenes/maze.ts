@@ -41,8 +41,8 @@ const HITBOX_OFFSET = (TILE_SIZE - HITBOX_SIZE) / 2; // 20px offset
 // NPC AI speeds (pixels per frame)
 const CHICK_SPEED_WANDER = 2;
 const CHICK_SPEED_FLEE = 5;
-const DOG_SPEED_WANDER = 2;
-const DOG_SPEED_CHASE = 4;
+const DOG_SPEED_WANDER = 1.5;
+const DOG_SPEED_CHASE = 3;
 const DOG_CHASE_RANGE = 400; // pixels - dog only chases if within this distance
 
 interface Player {
