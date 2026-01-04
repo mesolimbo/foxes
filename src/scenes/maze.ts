@@ -82,6 +82,7 @@ export class MazeScene implements Scene {
   private titleImg: ImageBitmap | null = null;
   private cluckSound: HTMLAudioElement | null = null;
   private barkSound: HTMLAudioElement | null = null;
+  private introSound: HTMLAudioElement | null = null;
   private lastBarkTime = 0;
   private mapCanvas: OffscreenCanvas | null = null;
   private mapCtx: OffscreenCanvasRenderingContext2D | null = null;
@@ -220,6 +221,10 @@ export class MazeScene implements Scene {
 
   private startGame(): void {
     this.gameStarted = true;
+    if (this.introSound) {
+      this.introSound.pause();
+      this.introSound.currentTime = 0;
+    }
   }
 
   private restartGame(): void {
@@ -232,6 +237,11 @@ export class MazeScene implements Scene {
     this.initPlayer();
     this.initNPCs();
     this.renderMapToBuffer();
+    // Stop intro music
+    if (this.introSound) {
+      this.introSound.pause();
+      this.introSound.currentTime = 0;
+    }
   }
 
   private nextLevel(): void {
@@ -276,6 +286,12 @@ export class MazeScene implements Scene {
     this.barkSound = new Audio("/assets/bark.mp3");
     this.barkSound.preload = "auto";
     this.barkSound.load();
+
+    this.introSound = new Audio("/assets/intro.mp3");
+    this.introSound.preload = "auto";
+    this.introSound.loop = true;
+    this.introSound.load();
+    this.introSound.play();
   }
 
   private playerOnLeft = true; // Track which side player spawned on
@@ -1019,6 +1035,11 @@ export class MazeScene implements Scene {
       if (npc.type === "dog" && !npc.dead) {
         if (this.hitboxesOverlap(this.player.x, this.player.y, npc.x, npc.y)) {
           this.gameOver = true;
+          // Play intro music on game over
+          if (this.introSound) {
+            this.introSound.currentTime = 0;
+            this.introSound.play();
+          }
           return;
         }
       }
