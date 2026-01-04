@@ -28,6 +28,13 @@ const PLAYER_FRAME_SIZE = 120;
 const PLAYER_FRAMES = 1;
 const PLAYER_SPEED = 8;
 
+// NPC config
+const NPC_SIZE = 120;
+
+// Hitbox is 60x60 centered in the 120x120 sprite
+const HITBOX_SIZE = 60;
+const HITBOX_OFFSET = (TILE_SIZE - HITBOX_SIZE) / 2; // 30px offset
+
 interface Player {
   x: number;
   y: number;
@@ -36,10 +43,21 @@ interface Player {
   frame: number;
 }
 
+interface NPC {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  img: HTMLImageElement;
+  type: "dog" | "chick";
+}
+
 export class MazeScene implements Scene {
   private grassImg: HTMLImageElement | null = null;
   private bushesImg: HTMLImageElement | null = null;
   private foxImg: HTMLImageElement | null = null;
+  private dogImg: HTMLImageElement | null = null;
+  private chickImg: HTMLImageElement | null = null;
   private mapCanvas: OffscreenCanvas | null = null;
   private mapCtx: OffscreenCanvasRenderingContext2D | null = null;
   private wallMatrix: boolean[][] = []; // true = wall, false = grass
@@ -47,11 +65,13 @@ export class MazeScene implements Scene {
   private cameraY = 0;
   private keys: Set<string> = new Set();
   private player: Player = { x: 0, y: 0, width: 0, height: 0, frame: 0 };
+  private npcs: NPC[] = [];
 
   async create(ctx: CanvasRenderingContext2D): Promise<void> {
     await this.loadAssets();
     this.generateMaze();
     this.initPlayer();
+    this.initNPCs();
     this.renderMapToBuffer();
     this.setupInput();
   }
@@ -75,10 +95,12 @@ export class MazeScene implements Scene {
   }
 
   private async loadAssets(): Promise<void> {
-    [this.grassImg, this.bushesImg, this.foxImg] = await Promise.all([
+    [this.grassImg, this.bushesImg, this.foxImg, this.dogImg, this.chickImg] = await Promise.all([
       this.loadImage("/assets/plain_grass.png"),
       this.loadImage("/assets/bushes.png"),
       this.loadImage("/assets/test-fox.png"),
+      this.loadImage("/assets/test-dog.png"),
+      this.loadImage("/assets/test-chick.png"),
     ]);
   }
 
@@ -108,6 +130,70 @@ export class MazeScene implements Scene {
     // Fallback: place at tile 1,1 if no grass found
     this.player.x = TILE_SIZE + (TILE_SIZE - this.player.width) / 2;
     this.player.y = TILE_SIZE + (TILE_SIZE - this.player.height) / 2;
+  }
+
+  private initNPCs(): void {
+    const npcData: { img: HTMLImageElement | null; type: "dog" | "chick" }[] = [
+      { img: this.dogImg, type: "dog" },
+      { img: this.chickImg, type: "chick" },
+    ];
+
+    for (const { img, type } of npcData) {
+      if (!img) continue;
+
+      // Find a random grass tile not occupied by player or other NPCs
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const tileCol = Math.floor(Math.random() * GRID_COLS);
+        const tileRow = Math.floor(Math.random() * GRID_ROWS);
+
+        // Skip if it's a wall
+        if (this.wallMatrix[tileRow]?.[tileCol]) continue;
+
+        const x = tileCol * TILE_SIZE;
+        const y = tileRow * TILE_SIZE;
+
+        // Skip if hitbox overlaps with player hitbox
+        if (this.hitboxesOverlap(x, y, this.player.x, this.player.y)) {
+          continue;
+        }
+
+        // Skip if overlaps with existing NPCs
+        let overlapsNPC = false;
+        for (const npc of this.npcs) {
+          if (this.hitboxesOverlap(x, y, npc.x, npc.y)) {
+            overlapsNPC = true;
+            break;
+          }
+        }
+        if (overlapsNPC) continue;
+
+        // Place NPC
+        this.npcs.push({ x, y, width: NPC_SIZE, height: NPC_SIZE, img, type });
+        break;
+      }
+    }
+
+    // Sort NPCs so dog renders before chick (dog at bottom)
+    this.npcs.sort((a, b) => {
+      const order = { dog: 0, chick: 1 };
+      return order[a.type] - order[b.type];
+    });
+  }
+
+  private hitboxesOverlap(x1: number, y1: number, x2: number, y2: number): boolean {
+    // 60x60 hitboxes centered in 120x120 sprites
+    const hx1 = x1 + HITBOX_OFFSET;
+    const hy1 = y1 + HITBOX_OFFSET;
+    const hx2 = x2 + HITBOX_OFFSET;
+    const hy2 = y2 + HITBOX_OFFSET;
+
+    return hx1 < hx2 + HITBOX_SIZE && hx1 + HITBOX_SIZE > hx2 &&
+           hy1 < hy2 + HITBOX_SIZE && hy1 + HITBOX_SIZE > hy2;
+  }
+
+  private rectsOverlap(x1: number, y1: number, w1: number, h1: number,
+                       x2: number, y2: number, w2: number, h2: number): boolean {
+    return x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2;
   }
 
   private generateMaze(): void {
@@ -340,6 +426,18 @@ export class MazeScene implements Scene {
       0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT
     );
 
+    // Draw NPCs
+    for (const npc of this.npcs) {
+      const screenX = npc.x - this.cameraX;
+      const screenY = npc.y - this.cameraY;
+
+      ctx.drawImage(
+        npc.img,
+        0, 0, npc.img.width, npc.img.height,
+        screenX, screenY, npc.width, npc.height
+      );
+    }
+
     // Draw player
     if (this.foxImg) {
       const screenX = this.player.x - this.cameraX;
@@ -356,21 +454,38 @@ export class MazeScene implements Scene {
   }
 
   private collidesWithWall(x: number, y: number): boolean {
-    // Check all four corners of player
-    const corners = [
-      { x: x, y: y },
-      { x: x + this.player.width - 1, y: y },
-      { x: x, y: y + this.player.height - 1 },
-      { x: x + this.player.width - 1, y: y + this.player.height - 1 },
-    ];
+    // Player hitbox (60x60 centered)
+    const phx = x + HITBOX_OFFSET;
+    const phy = y + HITBOX_OFFSET;
 
-    for (const corner of corners) {
-      const col = Math.floor(corner.x / TILE_SIZE);
-      const row = Math.floor(corner.y / TILE_SIZE);
-      if (this.wallMatrix[row]?.[col]) {
+    // Check collision with bush tiles using 60x60 hitboxes
+    const startCol = Math.floor(phx / TILE_SIZE);
+    const endCol = Math.floor((phx + HITBOX_SIZE - 1) / TILE_SIZE);
+    const startRow = Math.floor(phy / TILE_SIZE);
+    const endRow = Math.floor((phy + HITBOX_SIZE - 1) / TILE_SIZE);
+
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        if (this.wallMatrix[row]?.[col]) {
+          // Bush hitbox (60x60 centered in tile)
+          const bhx = col * TILE_SIZE + HITBOX_OFFSET;
+          const bhy = row * TILE_SIZE + HITBOX_OFFSET;
+
+          if (phx < bhx + HITBOX_SIZE && phx + HITBOX_SIZE > bhx &&
+              phy < bhy + HITBOX_SIZE && phy + HITBOX_SIZE > bhy) {
+            return true;
+          }
+        }
+      }
+    }
+
+    // Check collision with NPCs using 60x60 hitboxes
+    for (const npc of this.npcs) {
+      if (this.hitboxesOverlap(x, y, npc.x, npc.y)) {
         return true;
       }
     }
+
     return false;
   }
 }
