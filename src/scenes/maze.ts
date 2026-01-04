@@ -832,7 +832,7 @@ export class MazeScene implements Scene {
     const distToTarget = Math.sqrt(dx * dx + dy * dy);
     const reachedTarget = distToTarget < 20;
 
-    if (reachedTarget || currentTime > npc.nextWanderTime || npc.stuckTime > 30) {
+    if (reachedTarget || currentTime > npc.nextWanderTime || npc.stuckTime > 15) {
       this.pickRandomWanderTarget(npc);
       npc.nextWanderTime = currentTime + 1000 + Math.random() * 1000;
       npc.stuckTime = 0;
@@ -892,10 +892,18 @@ export class MazeScene implements Scene {
 
     // Edge-safe fleeing: don't push further out if near bounds
     const pad = 20;
-    if (npc.x <= pad && vx < 0) vx = 0;
-    if (npc.x >= MAP_WIDTH - npc.width - pad && vx > 0) vx = 0;
-    if (npc.y <= pad && vy < 0) vy = 0;
-    if (npc.y >= MAP_HEIGHT - npc.height - pad && vy > 0) vy = 0;
+    let atEdge = false;
+    if (npc.x <= pad && vx < 0) { vx = 0; atEdge = true; }
+    if (npc.x >= MAP_WIDTH - npc.width - pad && vx > 0) { vx = 0; atEdge = true; }
+    if (npc.y <= pad && vy < 0) { vy = 0; atEdge = true; }
+    if (npc.y >= MAP_HEIGHT - npc.height - pad && vy > 0) { vy = 0; atEdge = true; }
+
+    // Add jitter when at edge or stuck to help escape corners
+    if (atEdge || npc.stuckTime > 5) {
+      const jitterStrength = speed * 0.8;
+      vx += (Math.random() - 0.5) * jitterStrength * 2;
+      vy += (Math.random() - 0.5) * jitterStrength * 2;
+    }
 
     const newX = npc.x + vx;
     const newY = npc.y + vy;
