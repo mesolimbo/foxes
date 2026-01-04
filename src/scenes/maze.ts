@@ -73,6 +73,7 @@ export class MazeScene implements Scene {
   private dogImg: ImageBitmap | null = null;
   private chickImg: ImageBitmap | null = null;
   private chickBonesImg: ImageBitmap | null = null;
+  private titleImg: ImageBitmap | null = null;
   private mapCanvas: OffscreenCanvas | null = null;
   private mapCtx: OffscreenCanvasRenderingContext2D | null = null;
   private wallMatrix: boolean[][] = []; // true = wall, false = grass
@@ -81,16 +82,19 @@ export class MazeScene implements Scene {
   private keys: Set<string> = new Set();
   private player: Player = { x: 0, y: 0, width: 0, height: 0, frame: 0 };
   private npcs: NPC[] = [];
+  private gameStarted = false;
   private gameOver = false;
   private levelComplete = false;
   private canvas: HTMLCanvasElement | null = null;
   private mouseTarget: { x: number; y: number } | null = null;
   private isMouseDown = false;
   private score = 0;
+  private highScore = 0;
   private level = 1;
 
   async create(ctx: CanvasRenderingContext2D): Promise<void> {
     this.canvas = ctx.canvas;
+    this.loadHighScore();
     await this.loadAssets();
     this.generateMaze();
     this.initPlayer();
@@ -99,12 +103,28 @@ export class MazeScene implements Scene {
     this.setupInput();
   }
 
+  private loadHighScore(): void {
+    const match = document.cookie.match(/foxHighScore=(\d+)/);
+    if (match) {
+      this.highScore = parseInt(match[1], 10);
+    }
+  }
+
+  private saveHighScore(): void {
+    // Cookie expires in 1 year
+    const expires = new Date();
+    expires.setFullYear(expires.getFullYear() + 1);
+    document.cookie = `foxHighScore=${this.highScore};expires=${expires.toUTCString()};path=/`;
+  }
+
   private setupInput(): void {
     window.addEventListener("keydown", (e) => {
       this.keys.add(e.key);
-      // Space to restart when game over or continue when level complete
+      // Space to start game, restart when game over, or continue when level complete
       if (e.key === " ") {
-        if (this.gameOver) {
+        if (!this.gameStarted) {
+          this.startGame();
+        } else if (this.gameOver) {
           this.restartGame();
         } else if (this.levelComplete) {
           this.nextLevel();
@@ -129,6 +149,10 @@ export class MazeScene implements Scene {
 
     // Mouse events
     this.canvas?.addEventListener("mousedown", (e) => {
+      if (!this.gameStarted) {
+        this.startGame();
+        return;
+      }
       if (this.gameOver) {
         this.restartGame();
         return;
@@ -153,6 +177,10 @@ export class MazeScene implements Scene {
 
     // Touch events
     this.canvas?.addEventListener("touchstart", (e) => {
+      if (!this.gameStarted) {
+        this.startGame();
+        return;
+      }
       if (this.gameOver) {
         this.restartGame();
         return;
@@ -178,6 +206,10 @@ export class MazeScene implements Scene {
     window.addEventListener("touchend", () => {
       this.isMouseDown = false;
     });
+  }
+
+  private startGame(): void {
+    this.gameStarted = true;
   }
 
   private restartGame(): void {
@@ -216,13 +248,14 @@ export class MazeScene implements Scene {
   }
 
   private async loadAssets(): Promise<void> {
-    [this.grassImg, this.bushesImg, this.foxImg, this.dogImg, this.chickImg, this.chickBonesImg] = await Promise.all([
+    [this.grassImg, this.bushesImg, this.foxImg, this.dogImg, this.chickImg, this.chickBonesImg, this.titleImg] = await Promise.all([
       this.loadImage("/assets/plain_grass.png"),
       this.loadImage("/assets/bushes.png"),
       this.loadImage("/assets/test-fox.png"),
       this.loadImage("/assets/test-dog.png"),
       this.loadImage("/assets/test-chick.png"),
       this.loadImage("/assets/chick-bones.png"),
+      this.loadImage("/assets/title.png"),
     ]);
   }
 
@@ -522,6 +555,16 @@ export class MazeScene implements Scene {
   }
 
   update(ctx: CanvasRenderingContext2D, _deltaTime: number): void {
+    // Show title screen before game starts
+    if (!this.gameStarted) {
+      ctx.clearRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+      if (this.titleImg) {
+        // Draw title image scaled to fit viewport
+        ctx.drawImage(this.titleImg, 0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+      }
+      return;
+    }
+
     if (!this.mapCanvas) return;
 
     // Only update game logic if not game over or level complete
@@ -596,6 +639,35 @@ export class MazeScene implements Scene {
     // Ensure proper alpha blending for sprites
     ctx.globalCompositeOperation = 'source-over';
 
+    // Draw score (below characters)
+    ctx.font = "bold 24px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const scoreText = "Score: ";
+    const scoreNum = `${this.score}`;
+    const scoreX = 12 + ctx.measureText(scoreText).width;
+
+    // Set up shadow for halo effect
+    ctx.shadowColor = "rgba(0, 0, 0, 1)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    // Draw colored text with shadow
+    ctx.fillStyle = "#ff5555";
+    ctx.fillText(scoreText, 12, 40);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(scoreNum, scoreX, 40);
+
+    // Draw high score in smaller text below
+    ctx.font = "14px sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(`High Score: ${this.highScore}`, 12, 68);
+
+    // Reset shadow
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+
     // Collect all sprites for y-sorted rendering (bushes, bones, player, NPCs)
     const sprites: { type: 'bush' | 'bone' | 'sprite'; img: ImageBitmap; x: number; y: number; tileIndex?: number }[] = [];
 
@@ -648,30 +720,6 @@ export class MazeScene implements Scene {
         ctx.drawImage(sprite.img, screenX, screenY, TILE_SIZE, TILE_SIZE);
       }
     }
-
-    // Draw score (UI overlay, always on top)
-    ctx.font = "bold 24px sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    const scoreText = "Score: ";
-    const scoreNum = `${this.score}`;
-    const scoreX = 12 + ctx.measureText(scoreText).width;
-
-    // Set up shadow for halo effect
-    ctx.shadowColor = "rgba(0, 0, 0, 1)";
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-
-    // Draw colored text with shadow
-    ctx.fillStyle = "#ff5555";
-    ctx.fillText(scoreText, 12, 40);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(scoreNum, scoreX, 40);
-
-    // Reset shadow
-    ctx.shadowColor = "transparent";
-    ctx.shadowBlur = 0;
 
     // Draw game over UI
     if (this.gameOver) {
@@ -756,6 +804,10 @@ export class MazeScene implements Scene {
           // Kill the chick
           npc.dead = true;
           this.score++;
+          if (this.score > this.highScore) {
+            this.highScore = this.score;
+            this.saveHighScore();
+          }
           if (this.chickBonesImg) {
             npc.img = this.chickBonesImg;
           }
