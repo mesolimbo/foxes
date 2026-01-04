@@ -442,19 +442,28 @@ export class MazeScene implements Scene {
       ctx.drawImage(npc.img, screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
 
-    // Draw player (fox)
+    // Collect all live sprites for y-sorted rendering
+    const sprites: { img: ImageBitmap; x: number; y: number }[] = [];
+
+    // Add player
     if (this.foxImg) {
-      const screenX = this.player.x - this.cameraX;
-      const screenY = this.player.y - this.cameraY;
-      ctx.drawImage(this.foxImg, screenX, screenY, TILE_SIZE, TILE_SIZE);
+      sprites.push({ img: this.foxImg, x: this.player.x, y: this.player.y });
     }
 
-    // Draw live NPCs on top (dog, then chick)
+    // Add live NPCs
     for (const npc of this.npcs) {
       if (npc.dead) continue;
-      const screenX = npc.x - this.cameraX;
-      const screenY = npc.y - this.cameraY;
-      ctx.drawImage(npc.img, screenX, screenY, TILE_SIZE, TILE_SIZE);
+      sprites.push({ img: npc.img, x: npc.x, y: npc.y });
+    }
+
+    // Sort by y position (lower y = further back, drawn first)
+    sprites.sort((a, b) => a.y - b.y);
+
+    // Draw all sprites in sorted order
+    for (const sprite of sprites) {
+      const screenX = sprite.x - this.cameraX;
+      const screenY = sprite.y - this.cameraY;
+      ctx.drawImage(sprite.img, screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
   }
 
