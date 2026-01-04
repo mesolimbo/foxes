@@ -596,41 +596,8 @@ export class MazeScene implements Scene {
     // Ensure proper alpha blending for sprites
     ctx.globalCompositeOperation = 'source-over';
 
-    // Draw bones first (below score)
-    const deadNpcs = this.npcs.filter(npc => npc.dead);
-    deadNpcs.sort((a, b) => a.y - b.y);
-    for (const npc of deadNpcs) {
-      const screenX = npc.x - this.cameraX;
-      const screenY = npc.y - this.cameraY;
-      ctx.drawImage(npc.img, screenX, screenY, TILE_SIZE, TILE_SIZE);
-    }
-
-    // Draw score (below characters but above bones)
-    ctx.font = "bold 24px sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    const scoreText = "Score: ";
-    const scoreNum = `${this.score}`;
-    const scoreX = 12 + ctx.measureText(scoreText).width;
-
-    // Set up shadow for halo effect
-    ctx.shadowColor = "rgba(0, 0, 0, 1)";
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-
-    // Draw colored text with shadow
-    ctx.fillStyle = "#ff5555";
-    ctx.fillText(scoreText, 12, 40);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(scoreNum, scoreX, 40);
-
-    // Reset shadow
-    ctx.shadowColor = "transparent";
-    ctx.shadowBlur = 0;
-
-    // Collect all sprites for y-sorted rendering (bushes, player, live NPCs)
-    const sprites: { type: 'bush' | 'sprite'; img: ImageBitmap; x: number; y: number; tileIndex?: number }[] = [];
+    // Collect all sprites for y-sorted rendering (bushes, bones, player, NPCs)
+    const sprites: { type: 'bush' | 'bone' | 'sprite'; img: ImageBitmap; x: number; y: number; tileIndex?: number }[] = [];
 
     // Add bushes
     if (this.bushesImg) {
@@ -655,10 +622,13 @@ export class MazeScene implements Scene {
       sprites.push({ type: 'sprite', img: this.foxImg, x: this.player.x, y: this.player.y });
     }
 
-    // Add live NPCs
+    // Add NPCs (bones for dead, sprites for live)
     for (const npc of this.npcs) {
-      if (npc.dead) continue;
-      sprites.push({ type: 'sprite', img: npc.img, x: npc.x, y: npc.y });
+      if (npc.dead) {
+        sprites.push({ type: 'bone', img: npc.img, x: npc.x, y: npc.y });
+      } else {
+        sprites.push({ type: 'sprite', img: npc.img, x: npc.x, y: npc.y });
+      }
     }
 
     // Sort by y position (lower y = further back, drawn first)
@@ -678,6 +648,30 @@ export class MazeScene implements Scene {
         ctx.drawImage(sprite.img, screenX, screenY, TILE_SIZE, TILE_SIZE);
       }
     }
+
+    // Draw score (UI overlay, always on top)
+    ctx.font = "bold 24px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const scoreText = "Score: ";
+    const scoreNum = `${this.score}`;
+    const scoreX = 12 + ctx.measureText(scoreText).width;
+
+    // Set up shadow for halo effect
+    ctx.shadowColor = "rgba(0, 0, 0, 1)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    // Draw colored text with shadow
+    ctx.fillStyle = "#ff5555";
+    ctx.fillText(scoreText, 12, 40);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(scoreNum, scoreX, 40);
+
+    // Reset shadow
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
 
     // Draw game over UI
     if (this.gameOver) {
