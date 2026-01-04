@@ -36,6 +36,7 @@ dist: build
 	@cp dist/main.js dist-itch/
 	@cp -r assets dist-itch/
 	@sed -i 's|/src/main.ts|main.js|g' dist-itch/index.html
+	@sed -i 's|/assets/|assets/|g' dist-itch/main.js
 	@cd dist-itch && zip -r ../chicken-dinner-$(VERSION)-itch.zip .
 	@rm -rf dist-itch
 	@echo "Created chicken-dinner-$(VERSION)-itch.zip"
@@ -45,6 +46,7 @@ dist: build
 	@cp dist/main.js docs/
 	@cp -r assets docs/
 	@sed -i 's|/src/main.ts|main.js|g' docs/index.html
+	@sed -i 's|/assets/|assets/|g' docs/main.js
 	@echo "Created docs/ for GitHub Pages"
 
 # Clean build artifacts
