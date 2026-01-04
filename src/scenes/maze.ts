@@ -193,6 +193,8 @@ export class MazeScene implements Scene {
     ]);
   }
 
+  private playerOnLeft = true; // Track which side player spawned on
+
   private initPlayer(): void {
     if (!this.foxImg) return;
 
@@ -200,45 +202,67 @@ export class MazeScene implements Scene {
     this.player.width = PLAYER_FRAME_SIZE;
     this.player.height = PLAYER_FRAME_SIZE;
 
-    // Find a random grass tile within the map grid
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const tileCol = Math.floor(Math.random() * GRID_COLS);
-      const tileRow = Math.floor(Math.random() * GRID_ROWS);
+    // Randomly choose left or right side
+    this.playerOnLeft = Math.random() < 0.5;
+    const sideWidth = Math.floor(GRID_COLS / 3);
 
-      // Skip if out of bounds or is a wall
-      if (tileRow < 0 || tileRow >= GRID_ROWS || tileCol < 0 || tileCol >= GRID_COLS) continue;
-      if (!this.wallMatrix[tileRow][tileCol]) {
-        // Place player at tile origin
-        this.player.x = tileCol * TILE_SIZE;
-        this.player.y = tileRow * TILE_SIZE;
-        return;
-      }
+    let minCol: number, maxCol: number;
+    if (this.playerOnLeft) {
+      minCol = 0;
+      maxCol = sideWidth;
+    } else {
+      minCol = GRID_COLS - sideWidth - 1;
+      maxCol = GRID_COLS - 1;
     }
 
-    // Fallback: place at tile 1,1 if no grass found
-    this.player.x = TILE_SIZE;
-    this.player.y = TILE_SIZE;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const tileCol = minCol + Math.floor(Math.random() * (maxCol - minCol + 1));
+      const tileRow = Math.floor(Math.random() * GRID_ROWS);
+
+      // Skip if is a wall
+      if (this.wallMatrix[tileRow]?.[tileCol]) continue;
+
+      // Place player at tile origin
+      this.player.x = tileCol * TILE_SIZE;
+      this.player.y = tileRow * TILE_SIZE;
+      return;
+    }
+
+    // Fallback: place at tile 0,0
+    this.player.x = 0;
+    this.player.y = 0;
   }
 
   private initNPCs(): void {
-    // Spawn 1 dog
+    // Spawn 1 dog on OPPOSITE side from player
     if (this.dogImg) {
-      this.spawnNPC(this.dogImg, "dog");
+      const sideWidth = Math.floor(GRID_COLS / 3);
+      let minCol: number, maxCol: number;
+      if (this.playerOnLeft) {
+        // Dog on right
+        minCol = GRID_COLS - sideWidth - 1;
+        maxCol = GRID_COLS - 1;
+      } else {
+        // Dog on left
+        minCol = 0;
+        maxCol = sideWidth;
+      }
+      this.spawnNPC(this.dogImg, "dog", minCol, maxCol);
     }
 
-    // Spawn 2-3 chicks
+    // Spawn 4-5 chicks anywhere
     if (this.chickImg) {
-      const chickCount = 2 + Math.floor(Math.random() * 2);
+      const chickCount = 4 + Math.floor(Math.random() * 2);
       for (let i = 0; i < chickCount; i++) {
         this.spawnNPC(this.chickImg, "chick");
       }
     }
   }
 
-  private spawnNPC(img: ImageBitmap, type: "dog" | "chick"): void {
+  private spawnNPC(img: ImageBitmap, type: "dog" | "chick", minCol = 0, maxCol = GRID_COLS - 1): void {
     // Find a random grass tile not occupied by player or other NPCs
     for (let attempt = 0; attempt < 50; attempt++) {
-      const tileCol = Math.floor(Math.random() * GRID_COLS);
+      const tileCol = minCol + Math.floor(Math.random() * (maxCol - minCol + 1));
       const tileRow = Math.floor(Math.random() * GRID_ROWS);
 
       // Skip if out of bounds or is a wall
