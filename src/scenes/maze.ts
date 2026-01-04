@@ -80,6 +80,7 @@ export class MazeScene implements Scene {
   private chickImg: ImageBitmap | null = null;
   private chickBonesImg: ImageBitmap | null = null;
   private titleImg: ImageBitmap | null = null;
+  private cluckSound: HTMLAudioElement | null = null;
   private mapCanvas: OffscreenCanvas | null = null;
   private mapCtx: OffscreenCanvasRenderingContext2D | null = null;
   private wallMatrix: boolean[][] = []; // true = wall, false = grass
@@ -264,6 +265,11 @@ export class MazeScene implements Scene {
       this.loadImage("/assets/chick-bones.png"),
       this.loadImage("/assets/title.png"),
     ]);
+
+    // Load sound effects
+    this.cluckSound = new Audio("/assets/cluck.mp3");
+    this.cluckSound.preload = "auto";
+    this.cluckSound.load();
   }
 
   private playerOnLeft = true; // Track which side player spawned on
@@ -986,6 +992,11 @@ export class MazeScene implements Scene {
           }
           if (this.chickBonesImg) {
             npc.img = this.chickBonesImg;
+          }
+          // Play cluck sound
+          if (this.cluckSound) {
+            this.cluckSound.currentTime = 0;
+            this.cluckSound.play();
           }
           // Check if all chicks are dead
           const aliveChicks = this.npcs.filter(n => n.type === "chick" && !n.dead);
