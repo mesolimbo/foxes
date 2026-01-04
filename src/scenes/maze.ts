@@ -98,9 +98,6 @@ export class MazeScene implements Scene {
   private gameStarted = false;
   private gameOver = false;
   private levelComplete = false;
-  private loadingComplete = false;
-  private loadingProgress = 0;
-  private loadingScreenDismissed = false;
   private canvas: HTMLCanvasElement | null = null;
   private mouseTarget: { x: number; y: number } | null = null;
   private isMouseDown = false;
@@ -114,14 +111,12 @@ export class MazeScene implements Scene {
     this.loadHighScore();
     this.updateCanvasSize();
     window.addEventListener("resize", () => this.updateCanvasSize());
-    this.setupInput(); // Set up input early so user can dismiss loading screen
-    // Start loading in background - don't await so game loop can render progress
-    this.loadAssets().then(() => {
-      this.generateMaze();
-      this.initPlayer();
-      this.initNPCs();
-      this.renderMapToBuffer();
-    });
+    await this.loadAssets();
+    this.generateMaze();
+    this.initPlayer();
+    this.initNPCs();
+    this.renderMapToBuffer();
+    this.setupInput();
   }
 
   private updateCanvasSize(): void {
@@ -156,18 +151,19 @@ export class MazeScene implements Scene {
   }
 
   private setupInput(): void {
+    // Document-level touch handler for better mobile audio support
+    document.addEventListener("touchstart", (e) => {
+      if (!this.gameStarted) {
+        this.startGame();
+        e.preventDefault();
+      }
+    }, { once: true });
+
     window.addEventListener("keydown", (e) => {
       this.keys.add(e.key);
-      // Space to dismiss loading, start game, restart when game over, or continue when level complete
+      // Space to start game, restart when game over, or continue when level complete
       if (e.key === " ") {
-        if (!this.loadingScreenDismissed && this.loadingComplete) {
-          // Dismiss loading screen and start intro music
-          this.loadingScreenDismissed = true;
-          if (this.introSound) {
-            this.introSound.currentTime = 0;
-            this.introSound.play();
-          }
-        } else if (!this.gameStarted && this.loadingScreenDismissed) {
+        if (!this.gameStarted) {
           this.startGame();
         } else if (this.gameOver) {
           this.restartGame();
@@ -198,15 +194,6 @@ export class MazeScene implements Scene {
 
     // Mouse events
     this.canvas?.addEventListener("mousedown", (e) => {
-      if (!this.loadingScreenDismissed && this.loadingComplete) {
-        // Dismiss loading screen and start intro music
-        this.loadingScreenDismissed = true;
-        if (this.introSound) {
-          this.introSound.currentTime = 0;
-          this.introSound.play();
-        }
-        return;
-      }
       if (!this.gameStarted) {
         this.startGame();
         return;
@@ -235,16 +222,7 @@ export class MazeScene implements Scene {
 
     // Touch events
     this.canvas?.addEventListener("touchstart", (e) => {
-      e.preventDefault(); // Prevent mousedown from also firing
-      if (!this.loadingScreenDismissed && this.loadingComplete) {
-        // Dismiss loading screen and start intro music
-        this.loadingScreenDismissed = true;
-        if (this.introSound) {
-          this.introSound.currentTime = 0;
-          this.introSound.play();
-        }
-        return;
-      }
+      e.preventDefault(); // Prevent default touch behavior
       if (!this.gameStarted) {
         this.startGame();
         return;
@@ -277,9 +255,10 @@ export class MazeScene implements Scene {
 
   private startGame(): void {
     this.gameStarted = true;
+    // Play intro song once when game starts
     if (this.introSound) {
-      this.introSound.pause();
       this.introSound.currentTime = 0;
+      this.introSound.play().catch(() => {});
     }
   }
 
@@ -324,60 +303,30 @@ export class MazeScene implements Scene {
   }
 
   private async loadAssets(): Promise<void> {
-    const assets = [
-      "/assets/plain_grass.png",
-      "/assets/bushes.png",
-      "/assets/fox-sprite.png",
-      "/assets/dog-sprite.png",
-      "/assets/chick-sprite.png",
-      "/assets/chick-bones.png",
-      "/assets/title.png",
-    ];
-    const totalAssets = assets.length + 3; // +3 for audio files
-    let loaded = 0;
-
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-    const updateProgress = async () => {
-      loaded++;
-      this.loadingProgress = loaded / totalAssets;
-      await delay(100); // Minimum 100ms per asset so progress is visible
-    };
-
-    // Load images with progress tracking
-    this.grassImg = await this.loadImage(assets[0]);
-    await updateProgress();
-    this.bushesImg = await this.loadImage(assets[1]);
-    await updateProgress();
-    this.foxImg = await this.loadImage(assets[2]);
-    await updateProgress();
-    this.dogImg = await this.loadImage(assets[3]);
-    await updateProgress();
-    this.chickImg = await this.loadImage(assets[4]);
-    await updateProgress();
-    this.chickBonesImg = await this.loadImage(assets[5]);
-    await updateProgress();
-    this.titleImg = await this.loadImage(assets[6]);
-    await updateProgress();
+    // Load images
+    [this.grassImg, this.bushesImg, this.foxImg, this.dogImg, this.chickImg, this.chickBonesImg, this.titleImg] = await Promise.all([
+      this.loadImage("/assets/plain_grass.png"),
+      this.loadImage("/assets/bushes.png"),
+      this.loadImage("/assets/fox-sprite.png"),
+      this.loadImage("/assets/dog-sprite.png"),
+      this.loadImage("/assets/chick-sprite.png"),
+      this.loadImage("/assets/chick-bones.png"),
+      this.loadImage("/assets/title.png"),
+    ]);
 
     // Load sound effects
     this.cluckSound = new Audio("/assets/cluck.mp3");
     this.cluckSound.preload = "auto";
     this.cluckSound.load();
-    await updateProgress();
 
     this.barkSound = new Audio("/assets/bark.mp3");
     this.barkSound.preload = "auto";
     this.barkSound.load();
-    await updateProgress();
 
     this.introSound = new Audio("/assets/intro.mp3");
     this.introSound.preload = "auto";
-    this.introSound.loop = true;
+    this.introSound.loop = false; // Play once
     this.introSound.load();
-    await updateProgress();
-
-    this.loadingComplete = true;
   }
 
   private playerOnLeft = true; // Track which side player spawned on
@@ -538,8 +487,6 @@ export class MazeScene implements Scene {
 
     // Fix any closed boxes
     this.fixClosedBoxes();
-
-    console.log(`Placed ${placedCount} detached walls in ${attempts} attempts`);
   }
 
   private fixClosedBoxes(): void {
@@ -933,9 +880,9 @@ export class MazeScene implements Scene {
     ctx.rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
     ctx.clip();
 
-    // Show loading screen until dismissed
-    if (!this.loadingScreenDismissed) {
-      // Draw 100% opacity grass inside viewport (with 1px overlap to avoid sub-pixel gaps from scaling)
+    // Show title screen before game starts (with grass background)
+    if (!this.gameStarted) {
+      // Draw grass background
       if (this.grassImg) {
         const grassW = this.grassImg.width;
         const grassH = this.grassImg.height;
@@ -944,48 +891,7 @@ export class MazeScene implements Scene {
             ctx.drawImage(this.grassImg, x, y, grassW + 1, grassH + 1);
           }
         }
-      } else {
-        // Fallback before grass loads
-        ctx.fillStyle = "#1a1a1a";
-        ctx.fillRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
       }
-
-      // Progress bar dimensions
-      const barWidth = 300;
-      const barHeight = 20;
-      const barX = (VIEWPORT_WIDTH - barWidth) / 2;
-      const barY = VIEWPORT_HEIGHT / 2;
-
-      // Draw progress bar background
-      ctx.fillStyle = "#333";
-      ctx.fillRect(barX, barY, barWidth, barHeight);
-
-      // Draw progress bar fill
-      ctx.fillStyle = "#4a4";
-      ctx.fillRect(barX, barY, barWidth * this.loadingProgress, barHeight);
-
-      // Draw progress bar border
-      ctx.strokeStyle = "#666";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(barX, barY, barWidth, barHeight);
-
-      // Draw text
-      ctx.fillStyle = "#fff";
-      ctx.font = "24px monospace";
-      ctx.textAlign = "center";
-      if (this.loadingComplete) {
-        ctx.fillText("Tap to Continue", VIEWPORT_WIDTH / 2, barY + 60);
-      } else {
-        ctx.fillText("Loading...", VIEWPORT_WIDTH / 2, barY + 60);
-      }
-
-      ctx.restore();
-      return;
-    }
-
-    // Show title screen before game starts
-    if (!this.gameStarted) {
-      ctx.clearRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
       if (this.titleImg) {
         // Draw title image scaled to fit viewport
         ctx.drawImage(this.titleImg, 0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
