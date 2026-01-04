@@ -31,9 +31,9 @@ const PLAYER_SPEED = 8;
 // NPC config
 const NPC_SIZE = 120;
 
-// Hitbox is 60x60 centered in the 120x120 sprite
-const HITBOX_SIZE = 60;
-const HITBOX_OFFSET = (TILE_SIZE - HITBOX_SIZE) / 2; // 30px offset
+// Hitbox is 80x80 centered in the 120x120 sprite
+const HITBOX_SIZE = 80;
+const HITBOX_OFFSET = (TILE_SIZE - HITBOX_SIZE) / 2; // 20px offset
 
 interface Player {
   x: number;
@@ -50,6 +50,7 @@ interface NPC {
   height: number;
   img: HTMLImageElement;
   type: "dog" | "chick";
+  dead: boolean;
 }
 
 export class MazeScene implements Scene {
@@ -58,6 +59,7 @@ export class MazeScene implements Scene {
   private foxImg: HTMLImageElement | null = null;
   private dogImg: HTMLImageElement | null = null;
   private chickImg: HTMLImageElement | null = null;
+  private chickBonesImg: HTMLImageElement | null = null;
   private mapCanvas: OffscreenCanvas | null = null;
   private mapCtx: OffscreenCanvasRenderingContext2D | null = null;
   private wallMatrix: boolean[][] = []; // true = wall, false = grass
@@ -95,12 +97,13 @@ export class MazeScene implements Scene {
   }
 
   private async loadAssets(): Promise<void> {
-    [this.grassImg, this.bushesImg, this.foxImg, this.dogImg, this.chickImg] = await Promise.all([
+    [this.grassImg, this.bushesImg, this.foxImg, this.dogImg, this.chickImg, this.chickBonesImg] = await Promise.all([
       this.loadImage("/assets/plain_grass.png"),
       this.loadImage("/assets/bushes.png"),
       this.loadImage("/assets/test-fox.png"),
       this.loadImage("/assets/test-dog.png"),
       this.loadImage("/assets/test-chick.png"),
+      this.loadImage("/assets/chick-bones.png"),
     ]);
   }
 
@@ -111,25 +114,24 @@ export class MazeScene implements Scene {
     this.player.width = PLAYER_FRAME_SIZE;
     this.player.height = PLAYER_FRAME_SIZE;
 
-    // Find a random grass tile in the initial viewport
-    const viewTilesX = Math.floor(VIEWPORT_WIDTH / TILE_SIZE);
-    const viewTilesY = Math.floor(VIEWPORT_HEIGHT / TILE_SIZE);
-
+    // Find a random grass tile within the map grid
     for (let attempt = 0; attempt < 50; attempt++) {
-      const tileCol = Math.floor(Math.random() * viewTilesX);
-      const tileRow = Math.floor(Math.random() * viewTilesY);
+      const tileCol = Math.floor(Math.random() * GRID_COLS);
+      const tileRow = Math.floor(Math.random() * GRID_ROWS);
 
-      if (!this.wallMatrix[tileRow]?.[tileCol]) {
-        // Place player centered in this tile
-        this.player.x = tileCol * TILE_SIZE + (TILE_SIZE - this.player.width) / 2;
-        this.player.y = tileRow * TILE_SIZE + (TILE_SIZE - this.player.height) / 2;
+      // Skip if out of bounds or is a wall
+      if (tileRow < 0 || tileRow >= GRID_ROWS || tileCol < 0 || tileCol >= GRID_COLS) continue;
+      if (!this.wallMatrix[tileRow][tileCol]) {
+        // Place player at tile origin
+        this.player.x = tileCol * TILE_SIZE;
+        this.player.y = tileRow * TILE_SIZE;
         return;
       }
     }
 
     // Fallback: place at tile 1,1 if no grass found
-    this.player.x = TILE_SIZE + (TILE_SIZE - this.player.width) / 2;
-    this.player.y = TILE_SIZE + (TILE_SIZE - this.player.height) / 2;
+    this.player.x = TILE_SIZE;
+    this.player.y = TILE_SIZE;
   }
 
   private initNPCs(): void {
@@ -146,8 +148,9 @@ export class MazeScene implements Scene {
         const tileCol = Math.floor(Math.random() * GRID_COLS);
         const tileRow = Math.floor(Math.random() * GRID_ROWS);
 
-        // Skip if it's a wall
-        if (this.wallMatrix[tileRow]?.[tileCol]) continue;
+        // Skip if out of bounds or is a wall
+        if (tileRow < 0 || tileRow >= GRID_ROWS || tileCol < 0 || tileCol >= GRID_COLS) continue;
+        if (this.wallMatrix[tileRow][tileCol]) continue;
 
         const x = tileCol * TILE_SIZE;
         const y = tileRow * TILE_SIZE;
@@ -168,7 +171,7 @@ export class MazeScene implements Scene {
         if (overlapsNPC) continue;
 
         // Place NPC
-        this.npcs.push({ x, y, width: NPC_SIZE, height: NPC_SIZE, img, type });
+        this.npcs.push({ x, y, width: NPC_SIZE, height: NPC_SIZE, img, type, dead: false });
         break;
       }
     }
@@ -410,6 +413,9 @@ export class MazeScene implements Scene {
     this.player.x = Math.max(0, Math.min(this.player.x, MAP_WIDTH - this.player.width));
     this.player.y = Math.max(0, Math.min(this.player.y, MAP_HEIGHT - this.player.height));
 
+    // Check if player caught a chick
+    this.checkChickCollisions();
+
     // Camera follows player (centered)
     this.cameraX = this.player.x + this.player.width / 2 - VIEWPORT_WIDTH / 2;
     this.cameraY = this.player.y + this.player.height / 2 - VIEWPORT_HEIGHT / 2;
@@ -426,11 +432,11 @@ export class MazeScene implements Scene {
       0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT
     );
 
-    // Draw NPCs
+    // Draw dead NPCs (bones) right above background
     for (const npc of this.npcs) {
+      if (!npc.dead) continue;
       const screenX = npc.x - this.cameraX;
       const screenY = npc.y - this.cameraY;
-
       ctx.drawImage(
         npc.img,
         0, 0, npc.img.width, npc.img.height,
@@ -438,7 +444,7 @@ export class MazeScene implements Scene {
       );
     }
 
-    // Draw player
+    // Draw player (fox)
     if (this.foxImg) {
       const screenX = this.player.x - this.cameraX;
       const screenY = this.player.y - this.cameraY;
@@ -449,6 +455,18 @@ export class MazeScene implements Scene {
         this.foxImg,
         frameX, 0, frameWidth, this.foxImg.height,
         screenX, screenY, this.player.width, this.player.height
+      );
+    }
+
+    // Draw live NPCs on top (dog, then chick)
+    for (const npc of this.npcs) {
+      if (npc.dead) continue;
+      const screenX = npc.x - this.cameraX;
+      const screenY = npc.y - this.cameraY;
+      ctx.drawImage(
+        npc.img,
+        0, 0, npc.img.width, npc.img.height,
+        screenX, screenY, npc.width, npc.height
       );
     }
   }
@@ -479,13 +497,28 @@ export class MazeScene implements Scene {
       }
     }
 
-    // Check collision with NPCs using 60x60 hitboxes
+    // Check collision with NPCs using 60x60 hitboxes (skip dead NPCs and chicks)
+    // Chicks don't block movement - they get caught instead
     for (const npc of this.npcs) {
-      if (this.hitboxesOverlap(x, y, npc.x, npc.y)) {
+      if (!npc.dead && npc.type !== "chick" && this.hitboxesOverlap(x, y, npc.x, npc.y)) {
         return true;
       }
     }
 
     return false;
+  }
+
+  private checkChickCollisions(): void {
+    for (const npc of this.npcs) {
+      if (npc.type === "chick" && !npc.dead) {
+        if (this.hitboxesOverlap(this.player.x, this.player.y, npc.x, npc.y)) {
+          // Kill the chick
+          npc.dead = true;
+          if (this.chickBonesImg) {
+            npc.img = this.chickBonesImg;
+          }
+        }
+      }
+    }
   }
 }
