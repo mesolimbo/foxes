@@ -82,10 +82,12 @@ export class MazeScene implements Scene {
   private player: Player = { x: 0, y: 0, width: 0, height: 0, frame: 0 };
   private npcs: NPC[] = [];
   private gameOver = false;
+  private levelComplete = false;
   private canvas: HTMLCanvasElement | null = null;
   private mouseTarget: { x: number; y: number } | null = null;
   private isMouseDown = false;
   private score = 0;
+  private level = 1;
 
   async create(ctx: CanvasRenderingContext2D): Promise<void> {
     this.canvas = ctx.canvas;
@@ -100,9 +102,13 @@ export class MazeScene implements Scene {
   private setupInput(): void {
     window.addEventListener("keydown", (e) => {
       this.keys.add(e.key);
-      // Space to restart when game over
-      if (e.key === " " && this.gameOver) {
-        this.restartGame();
+      // Space to restart when game over or continue when level complete
+      if (e.key === " ") {
+        if (this.gameOver) {
+          this.restartGame();
+        } else if (this.levelComplete) {
+          this.nextLevel();
+        }
       }
     });
     window.addEventListener("keyup", (e) => {
@@ -127,6 +133,10 @@ export class MazeScene implements Scene {
         this.restartGame();
         return;
       }
+      if (this.levelComplete) {
+        this.nextLevel();
+        return;
+      }
       this.isMouseDown = true;
       this.mouseTarget = getWorldPos(e.clientX, e.clientY);
     });
@@ -145,6 +155,10 @@ export class MazeScene implements Scene {
     this.canvas?.addEventListener("touchstart", (e) => {
       if (this.gameOver) {
         this.restartGame();
+        return;
+      }
+      if (this.levelComplete) {
+        this.nextLevel();
         return;
       }
       e.preventDefault();
@@ -168,12 +182,29 @@ export class MazeScene implements Scene {
 
   private restartGame(): void {
     this.gameOver = false;
+    this.levelComplete = false;
     this.score = 0;
+    this.level = 1;
     this.npcs = [];
     this.generateMaze();
     this.initPlayer();
     this.initNPCs();
     this.renderMapToBuffer();
+  }
+
+  private nextLevel(): void {
+    this.levelComplete = false;
+    this.level++;
+    this.npcs = [];
+    this.generateMaze();
+    this.initPlayer();
+    this.initNPCs();
+    this.renderMapToBuffer();
+  }
+
+  private getSpeedMultiplier(): number {
+    // Increase speed by 5% per level (compounds)
+    return Math.pow(1.05, this.level - 1);
   }
 
   private async loadImage(src: string): Promise<ImageBitmap> {
@@ -493,8 +524,8 @@ export class MazeScene implements Scene {
   update(ctx: CanvasRenderingContext2D, _deltaTime: number): void {
     if (!this.mapCanvas) return;
 
-    // Only update game logic if not game over
-    if (!this.gameOver) {
+    // Only update game logic if not game over or level complete
+    if (!this.gameOver && !this.levelComplete) {
       // Handle player movement
       let newX = this.player.x;
       let newY = this.player.y;
@@ -666,6 +697,25 @@ export class MazeScene implements Scene {
       ctx.font = "24px sans-serif";
       ctx.fillText("Tap to Retry", VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2 + 30);
     }
+
+    // Draw level complete UI
+    if (this.levelComplete) {
+      // Semi-transparent overlay
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.fillRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+
+      // Level Complete text
+      ctx.fillStyle = "#55ff55";
+      ctx.font = "bold 48px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Level Complete", VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2 - 30);
+
+      // Tap to Continue text
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "24px sans-serif";
+      ctx.fillText("Tap to Continue", VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2 + 30);
+    }
   }
 
   private collidesWithWall(x: number, y: number): boolean {
@@ -715,6 +765,11 @@ export class MazeScene implements Scene {
           if (this.chickBonesImg) {
             npc.img = this.chickBonesImg;
           }
+          // Check if all chicks are dead
+          const aliveChicks = this.npcs.filter(n => n.type === "chick" && !n.dead);
+          if (aliveChicks.length === 0) {
+            this.levelComplete = true;
+          }
         }
       }
     }
@@ -732,6 +787,8 @@ export class MazeScene implements Scene {
   }
 
   private updateNPCs(currentTime: number): void {
+    const speedMult = this.getSpeedMultiplier();
+
     for (const npc of this.npcs) {
       if (npc.dead) continue;
 
@@ -743,18 +800,18 @@ export class MazeScene implements Scene {
       if (npc.type === "chick") {
         if (hasLOS) {
           // Flee from player
-          this.moveNpcAway(npc, this.player.x, this.player.y, CHICK_SPEED_FLEE);
+          this.moveNpcAway(npc, this.player.x, this.player.y, CHICK_SPEED_FLEE * speedMult);
         } else {
           // Wander
-          this.wanderNpc(npc, currentTime, CHICK_SPEED_WANDER);
+          this.wanderNpc(npc, currentTime, CHICK_SPEED_WANDER * speedMult);
         }
       } else if (npc.type === "dog") {
         if (hasLOS && distanceToPlayer < DOG_CHASE_RANGE) {
           // Chase player
-          this.moveNpcToward(npc, this.player.x, this.player.y, DOG_SPEED_CHASE);
+          this.moveNpcToward(npc, this.player.x, this.player.y, DOG_SPEED_CHASE * speedMult);
         } else {
           // Wander
-          this.wanderNpc(npc, currentTime, DOG_SPEED_WANDER);
+          this.wanderNpc(npc, currentTime, DOG_SPEED_WANDER * speedMult);
         }
       }
 
